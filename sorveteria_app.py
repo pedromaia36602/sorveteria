@@ -235,62 +235,146 @@ class SorveteriaApp(ctk.CTk):
         titulo = ctk.CTkLabel(self.frame_principal, text="Produtos", font=("Arial", 22, "bold"))
         titulo.pack(pady=10)
 
-        # Cadastro produto
+        # Frame para cadastro/edição
         frame_cadastro = ctk.CTkFrame(self.frame_principal)
         frame_cadastro.pack(pady=10, padx=10, fill="x")
 
-        ctk.CTkLabel(frame_cadastro, text="Cadastrar novo produto", font=("Arial", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=5)
+        ctk.CTkLabel(frame_cadastro, text="Cadastrar/Editar Produto", font=("Arial", 16, "bold")).grid(row=0, column=0, columnspan=4, pady=5)
 
-        ctk.CTkLabel(frame_cadastro, text="Nome:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-        entrada_nome = ctk.CTkEntry(frame_cadastro)
-        entrada_nome.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        # Campos do formulário
+        ctk.CTkLabel(frame_cadastro, text="Código (deixe em branco para novo):").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.entrada_codigo_produto = ctk.CTkEntry(frame_cadastro)
+        self.entrada_codigo_produto.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-        ctk.CTkLabel(frame_cadastro, text="Preço:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-        entrada_preco = ctk.CTkEntry(frame_cadastro)
-        entrada_preco.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(frame_cadastro, text="Nome:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        self.entrada_nome_produto = ctk.CTkEntry(frame_cadastro)
+        self.entrada_nome_produto.grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-        ctk.CTkLabel(frame_cadastro, text="Quantidade:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
-        entrada_quantidade = ctk.CTkEntry(frame_cadastro)
-        entrada_quantidade.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(frame_cadastro, text="Preço:").grid(row=3, column=0, padx=5, pady=5, sticky="e")
+        self.entrada_preco_produto = ctk.CTkEntry(frame_cadastro)
+        self.entrada_preco_produto.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
-        def cadastrar():
-            nome = entrada_nome.get().strip()
-            preco = entrada_preco.get().strip()
-            quantidade = entrada_quantidade.get().strip()
-            if not nome or not preco or not quantidade:
-                messagebox.showerror("Erro", "Preencha todos os campos!")
-                return
-            try:
-                preco = float(preco)
-                quantidade = int(quantidade)
-            except ValueError:
-                messagebox.showerror("Erro", "Preço e Quantidade devem ser números válidos!")
-                return
-            
-            produto_id = self.backend.criar_produto(nome, preco, quantidade)
-            if produto_id:
-                messagebox.showinfo("Sucesso", f"Produto {nome} cadastrado com código {produto_id}!")
-                self.abrir_produtos()
+        ctk.CTkLabel(frame_cadastro, text="Quantidade em Estoque:").grid(row=4, column=0, padx=5, pady=5, sticky="e")
+        self.entrada_quantidade_produto = ctk.CTkEntry(frame_cadastro)
+        self.entrada_quantidade_produto.grid(row=4, column=1, padx=5, pady=5, sticky="w")
+
+        # Botões
+        btn_carregar = ctk.CTkButton(frame_cadastro, text="Carregar", command=self.carregar_produto)
+        btn_carregar.grid(row=5, column=0, pady=10, padx=5)
+
+        btn_salvar = ctk.CTkButton(frame_cadastro, text="Salvar", command=self.salvar_produto)
+        btn_salvar.grid(row=5, column=1, pady=10, padx=5)
+
+        btn_limpar = ctk.CTkButton(frame_cadastro, text="Limpar", command=self.limpar_formulario_produto)
+        btn_limpar.grid(row=5, column=2, pady=10, padx=5)
+
+        btn_excluir = ctk.CTkButton(frame_cadastro, text="Excluir", fg_color="#d9534f", hover_color="#c9302c", command=self.excluir_produto)
+        btn_excluir.grid(row=5, column=3, pady=10, padx=5)
+
+        # Lista de produtos
+        frame_lista = ctk.CTkFrame(self.frame_principal)
+        frame_lista.pack(pady=10, padx=10, fill="both", expand=True)
+
+        ctk.CTkLabel(frame_lista, text="Lista de Produtos", font=("Arial", 18, "bold")).pack(pady=5)
+
+        self.lista_produtos = ctk.CTkScrollableFrame(frame_lista, height=300)
+        self.lista_produtos.pack(fill="both", expand=True)
+
+        self.atualizar_lista_produtos()
+
+    def carregar_produto(self):
+        codigo = self.entrada_codigo_produto.get().strip()
+        if not codigo:
+            messagebox.showerror("Erro", "Informe o código do produto!")
+            return
+
+        produto = self.backend.obter_produto_por_id(codigo)
+        if produto:
+            self.limpar_formulario_produto()
+            self.entrada_codigo_produto.insert(0, str(produto['codigo']))
+            self.entrada_nome_produto.insert(0, produto['nome'])
+            self.entrada_preco_produto.insert(0, str(produto['preco']))
+            self.entrada_quantidade_produto.insert(0, str(produto['quantidade']))
+        else:
+            messagebox.showerror("Erro", "Produto não encontrado!")
+
+    def salvar_produto(self):
+        codigo = self.entrada_codigo_produto.get().strip()
+        nome = self.entrada_nome_produto.get().strip()
+        preco = self.entrada_preco_produto.get().strip()
+        quantidade = self.entrada_quantidade_produto.get().strip()
+
+        if not nome or not preco or not quantidade:
+            messagebox.showerror("Erro", "Preencha todos os campos!")
+            return
+
+        try:
+            preco = float(preco)
+            quantidade = int(quantidade)
+            if preco <= 0 or quantidade < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Erro", "Preço deve ser número positivo e quantidade inteiro não negativo!")
+            return
+
+        if codigo:  # Edição
+            if self.backend.atualizar_produto(codigo, nome, preco, quantidade):
+                messagebox.showinfo("Sucesso", "Produto atualizado com sucesso!")
+                self.atualizar_lista_produtos()
+            else:
+                messagebox.showerror("Erro", "Falha ao atualizar produto!")
+        else:  # Cadastro novo
+            novo_codigo = self.backend.criar_produto(nome, preco, quantidade)
+            if novo_codigo:
+                messagebox.showinfo("Sucesso", f"Produto cadastrado com código {novo_codigo}!")
+                self.limpar_formulario_produto()
+                self.atualizar_lista_produtos()
             else:
                 messagebox.showerror("Erro", "Falha ao cadastrar produto!")
 
-        btn_cadastrar = ctk.CTkButton(frame_cadastro, text="Cadastrar Produto", command=cadastrar)
-        btn_cadastrar.grid(row=4, column=0, columnspan=2, pady=10)
+    def limpar_formulario_produto(self):
+        self.entrada_codigo_produto.delete(0, 'end')
+        self.entrada_nome_produto.delete(0, 'end')
+        self.entrada_preco_produto.delete(0, 'end')
+        self.entrada_quantidade_produto.delete(0, 'end')
 
-        # Lista produtos
-        frame_lista = ctk.CTkFrame(self.frame_principal)
-        frame_lista.pack(padx=10, pady=10, fill="both", expand=True)
+    def excluir_produto(self):
+        codigo = self.entrada_codigo_produto.get().strip()
+        if not codigo:
+            messagebox.showerror("Erro", "Nenhum produto selecionado para excluir!")
+            return
 
-        ctk.CTkLabel(frame_lista, text="Produtos Cadastrados", font=("Arial", 18, "bold")).pack(pady=5)
+        confirmacao = messagebox.askyesno("Confirmação", f"Tem certeza que deseja excluir o produto {codigo}?")
+        if confirmacao:
+            if self.backend.excluir_produto(codigo):
+                messagebox.showinfo("Sucesso", "Produto excluído com sucesso!")
+                self.limpar_formulario_produto()
+                self.atualizar_lista_produtos()
+            else:
+                messagebox.showerror("Erro", "Falha ao excluir produto!")
 
-        lista_scroll = ctk.CTkScrollableFrame(frame_lista)
-        lista_scroll.pack(fill="both", expand=True, pady=5)
+    def atualizar_lista_produtos(self):
+        for widget in self.lista_produtos.winfo_children():
+            widget.destroy()
 
         produtos = self.backend.listar_produtos()
-        for p in produtos:
-            info = f"Código: {p['codigo']} | Nome: {p['nome']} | Preço: R$ {p['preco']:.2f} | Qtde: {p['quantidade']}"
-            lbl = ctk.CTkLabel(lista_scroll, text=info)
-            lbl.pack(anchor="w", padx=10, pady=2)
+        for produto in produtos:
+            frame = ctk.CTkFrame(self.lista_produtos)
+            frame.pack(fill="x", pady=2, padx=2)
+
+            info = f"{produto['codigo']} - {produto['nome']} | Preço: R$ {produto['preco']:.2f} | Estoque: {produto['quantidade']}"
+            lbl = ctk.CTkLabel(frame, text=info)
+            lbl.pack(side="left", padx=5)
+
+            btn_editar = ctk.CTkButton(frame, text="Editar", width=80, command=lambda p=produto: self.editar_produto(p))
+            btn_editar.pack(side="right", padx=5)
+
+    def editar_produto(self, produto):
+        self.limpar_formulario_produto()
+        self.entrada_codigo_produto.insert(0, str(produto['codigo']))
+        self.entrada_nome_produto.insert(0, produto['nome'])
+        self.entrada_preco_produto.insert(0, str(produto['preco']))
+        self.entrada_quantidade_produto.insert(0, str(produto['quantidade']))
 
     ### PROMOÇÕES ###
     def abrir_promocoes(self):
@@ -508,6 +592,10 @@ class SorveteriaApp(ctk.CTk):
                 texto = f"ID: {produto['codigo']} | Nome: {produto['nome']} | Estoque: {produto['quantidade']} (estoque baixo!)"
                 ctk.CTkLabel(frame, text=texto, text_color="red").pack(side="left", padx=5)
 
+                btn_editar = ctk.CTkButton(frame, text="Editar", width=80,
+                                         command=lambda p=produto: self.editar_direto_estoque(p))
+                btn_editar.pack(side="right", padx=5)
+
         # Listar todos os produtos
         for produto in produtos:
             frame = ctk.CTkFrame(self.lista_todos_produtos)
@@ -515,6 +603,22 @@ class SorveteriaApp(ctk.CTk):
             
             texto = f"ID: {produto['codigo']} | Nome: {produto['nome']} | Preço: R$ {produto['preco']:.2f} | Estoque: {produto['quantidade']}"
             ctk.CTkLabel(frame, text=texto).pack(side="left", padx=5)
+
+            btn_editar = ctk.CTkButton(frame, text="Editar", width=80,
+                                     command=lambda p=produto: self.editar_direto_estoque(p))
+            btn_editar.pack(side="right", padx=5)
+
+    def editar_direto_estoque(self, produto):
+        """Abre a tela de produtos já com os dados carregados para edição"""
+        self.abrir_produtos()
+        self.entrada_codigo_produto.delete(0, 'end')
+        self.entrada_codigo_produto.insert(0, str(produto['codigo']))
+        self.entrada_nome_produto.delete(0, 'end')
+        self.entrada_nome_produto.insert(0, produto['nome'])
+        self.entrada_preco_produto.delete(0, 'end')
+        self.entrada_preco_produto.insert(0, str(produto['preco']))
+        self.entrada_quantidade_produto.delete(0, 'end')
+        self.entrada_quantidade_produto.insert(0, str(produto['quantidade']))
 
 
 if __name__ == "__main__":

@@ -75,32 +75,102 @@ class SorveteriaBackend:
     
     # Métodos para Produtos
     def criar_produto(self, nome: str, preco: float, quantidade: int) -> Optional[int]:
+        """Cria um novo produto e seu registro de estoque"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("INSERT INTO Produto (nome, preco) VALUES (?, ?)", (nome, preco))
             produto_id = cursor.lastrowid
             cursor.execute("INSERT INTO Estoque (codigo_produto, quantidade) VALUES (?, ?)", 
-                          (produto_id, quantidade))
+                         (produto_id, quantidade))
             self.conn.commit()
             return produto_id
         except sqlite3.Error as e:
             print(f"Erro ao criar produto: {e}")
+            self.conn.rollback()
             return None
     
-    def listar_produtos(self) -> List[Dict]:
+    def obter_produto_por_id(self, produto_id: int) -> Optional[Dict]:
+        """Obtém um produto específico pelo seu código"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
                 SELECT p.codigo, p.nome, p.preco, e.quantidade 
                 FROM Produto p
                 JOIN Estoque e ON p.codigo = e.codigo_produto
+                WHERE p.codigo = ?
+            """, (produto_id,))
+            produto = cursor.fetchone()
+            return dict(produto) if produto else None
+        except sqlite3.Error as e:
+            print(f"Erro ao obter produto: {e}")
+            return None
+    
+    def listar_produtos(self) -> List[Dict]:
+        """Lista todos os produtos com suas quantidades em estoque"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT p.codigo, p.nome, p.preco, e.quantidade 
+                FROM Produto p
+                JOIN Estoque e ON p.codigo = e.codigo_produto
+                ORDER BY p.nome
             """)
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"Erro ao listar produtos: {e}")
             return []
     
+    def atualizar_produto(self, codigo: int, nome: str, preco: float, quantidade: int) -> bool:
+        """Atualiza os dados de um produto e seu estoque"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Atualiza produto
+            cursor.execute("""
+                UPDATE Produto 
+                SET nome = ?, preco = ? 
+                WHERE codigo = ?
+            """, (nome, preco, codigo))
+            
+            # Atualiza estoque
+            cursor.execute("""
+                UPDATE Estoque 
+                SET quantidade = ? 
+                WHERE codigo_produto = ?
+            """, (quantidade, codigo))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"Erro ao atualizar produto: {e}")
+            self.conn.rollback()
+            return False
+    
+    def excluir_produto(self, codigo: int) -> bool:
+        """Remove um produto e seu registro de estoque"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Verifica se há vendas associadas ao produto
+            cursor.execute("SELECT COUNT(*) FROM Venda WHERE codigo_produto = ?", (codigo,))
+            if cursor.fetchone()[0] > 0:
+                return False  # Não permite excluir produtos com vendas registradas
+            
+            # Remove o estoque primeiro por causa da constraint de chave estrangeira
+            cursor.execute("DELETE FROM Estoque WHERE codigo_produto = ?", (codigo,))
+            
+            # Remove o produto
+            cursor.execute("DELETE FROM Produto WHERE codigo = ?", (codigo,))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"Erro ao excluir produto: {e}")
+            self.conn.rollback()
+            return False
+    
     def atualizar_estoque(self, produto_id: int, quantidade_alterar: int) -> bool:
+        """Atualiza a quantidade em estoque de um produto"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -112,11 +182,13 @@ class SorveteriaBackend:
             return cursor.rowcount > 0
         except sqlite3.Error as e:
             print(f"Erro ao atualizar estoque: {e}")
+            self.conn.rollback()
             return False
     
     # Métodos para Vendas
     def criar_venda(self, produto_id: int, produto_nome: str, quantidade: int, 
                    preco_unitario: float, codigo_promocao: Optional[int] = None) -> tuple:
+        """Cria uma nova venda e atualiza o estoque"""
         try:
             cursor = self.conn.cursor()
             
@@ -142,6 +214,13 @@ class SorveteriaBackend:
                 datetime.now().strftime("%H:%M:%S"), 'aberta', codigo_promocao
             ))
             
+            # Atualizar estoque
+            cursor.execute("""
+                UPDATE Estoque 
+                SET quantidade = quantidade - ? 
+                WHERE codigo_produto = ?
+            """, (quantidade, produto_id))
+            
             venda_id = cursor.lastrowid
             self.conn.commit()
             return venda_id, None
@@ -151,6 +230,7 @@ class SorveteriaBackend:
             return None, str(e)
     
     def finalizar_venda(self, venda_id: int) -> bool:
+        """Marca uma venda como finalizada"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -166,6 +246,7 @@ class SorveteriaBackend:
             return False
     
     def listar_vendas(self, status: Optional[str] = None) -> List[Dict]:
+        """Lista vendas, opcionalmente filtrando por status"""
         try:
             cursor = self.conn.cursor()
             
@@ -189,6 +270,7 @@ class SorveteriaBackend:
     # Métodos para Promoções
     def criar_promocao(self, descricao: str, desconto_percentual: float, 
                       data_inicio: str, data_fim: str) -> Optional[int]:
+        """Cria uma nova promoção"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -206,6 +288,7 @@ class SorveteriaBackend:
             return None
     
     def listar_promocoes(self) -> List[Dict]:
+        """Lista todas as promoções"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -219,6 +302,7 @@ class SorveteriaBackend:
     
     # Métodos para Relatórios
     def calcular_resumo(self) -> Dict[str, float]:
+        """Calcula métricas resumidas para o painel"""
         try:
             cursor = self.conn.cursor()
             
@@ -282,6 +366,7 @@ class SorveteriaBackend:
     
     # Métodos para Despesas
     def criar_despesa(self, descricao: str, valor: float) -> bool:
+        """Registra uma nova despesa"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -298,6 +383,7 @@ class SorveteriaBackend:
             return False
     
     def listar_despesas(self) -> List[Dict]:
+        """Lista todas as despesas"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
